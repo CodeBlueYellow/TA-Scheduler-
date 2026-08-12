@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TA Availability</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="nav">
+        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('users') }}">Users</a>
+    </div>
+
+    <h1>TA Availability Form</h1>
+
+    <form method="POST">
+
+        <label>Name:</label><br>
+        <input type="text" name="name" required><br><br>
+
+        <h3>Monday</h3>
+        <select name="monday">
+            <option value="Unavailable">Unavailable</option>
+            <option value="Available">Available</option>
+            <option value="Preferred">Preferred</option>
+        </select><br><br>
+
+        <h3>Tuesday</h3>
+        <select name="tuesday">
+            <option value="Unavailable">Unavailable</option>
+            <option value="Available">Available</option>
+            <option value="Preferred">Preferred</option>
+        </select><br><br>
+
+        <h3>Wednesday</h3>
+        <select name="wednesday">
+            <option value="Unavailable">Unavailable</option>
+            <option value="Available">Available</option>
+            <option value="Preferred">Preferred</option>
+        </select><br><br>
+
+        <h3>Thursday</h3>
+        <select name="thursday">
+            <option value="Unavailable">Unavailable</option>
+            <option value="Available">Available</option>
+            <option value="Preferred">Preferred</option>
+        </select><br><br>
+
+        <h3>Friday</h3>
+        <select name="friday">
+            <option value="Unavailable">Unavailable</option>
+            <option value="Available">Available</option>
+            <option value="Preferred">Preferred</option>
+        </select><br><br>
+
+        <button type="submit">Submit Availability</button>
+
+    </form>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Home</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <h1>TA Scheduler System</h1>
+
+        <a href="{{ url_for('users') }}">View Users</a>
+        <a href="{{ url_for('add_user_page') }}">Create User</a>
+        <a href="{{ url_for('test_db') }}">Database Connection test</a>
+        <a href="{{ url_for('availability') }}">TA Availability</a>
+        <a href="{{ url_for('availability_checker') }}">TA Availability List</a>
+    </div>
+</body>
+</html>
