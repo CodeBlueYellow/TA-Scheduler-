@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>Admin Dashboard</h1>
+
+    <p>Welcome, Admin</p>
+
+    <div class="nav">
+        <a href="{{ url_for('add_user_page') }}">Create User</a>
+
+        <a href="{{ url_for('users') }}">View Users</a>
+
+        <a href="{{ url_for('availability_checker') }}">
+            Check Availability
+        </a>
+        <a href="{{ url_for('login') }}">
+            Logout
+        </a>
+    </div>
+
+</div>
+
+</body>
+</html>

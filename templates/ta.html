@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>TA Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>TA Dashboard</h1>
+
+    <p>Welcome, TA</p>
+
+    <div class="nav">
+        <a href="{{ url_for('availability') }}">
+            Submit Availability
+        </a>
+         <a href="{{ url_for('login') }}">
+            Logout
+        </a>
+    </div>
+
+</div>
+
+</body>
+</html>
