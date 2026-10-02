@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Join Code</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="nav">
+        <a href="{{ url_for('admin') }}">Home</a>
+    </div>
+
+    <h1>TA Join Code</h1>
+
+    <p>Current code: <strong>{{ join_code }}</strong></p>
+    <p>Give this code to your TAs so they can create an account.</p>
+
+    {% if message %}
+    <p>{{ message }}</p>
+    {% endif %}
+
+    <form method="POST">
+
+        <input type="text" name="join_code" placeholder="New join code" required>
+
+        <button type="submit">Update Join Code</button>
+
+    </form>
+
+</div>
+
+</body>
+</html>
