@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Schedules</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="nav">
+        <a href="{{ url_for('admin') }}">Home</a>
+    </div>
+
+    <h1>Schedules</h1>
+
+    <p>TAs sign up with the universal join code. <a href="{{ url_for('join_code') }}">Change Join Code</a></p>
+
+    <h3>Create Empty Schedule</h3>
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('new_schedule') }}">
+
+        <input type="text" name="name" placeholder="Schedule name (e.g. CS 101 Fall 2026)" maxlength="100" required>
+
+        <button type="submit">Create Schedule</button>
+
+    </form>
+
+    <h3>Upload Prebuilt Schedule</h3>
+
+    <p>
+        Upload a .csv file whose first row is
+        <strong>day,start_time,end_time,location,tas_needed</strong>.
+        Times use 24-hour format (e.g. 13:30). In Excel, use File &gt; Save As &gt; CSV UTF-8.
+    </p>
+
+    <a href="{{ url_for('static', filename='schedule_template.csv') }}" download>Download Template</a>
+
+    {% if upload_errors %}
+    <div class="error">
+        <p>Nothing was saved. Fix these and upload again:</p>
+        {# Cap the list so a badly formatted file doesn't produce hundreds of lines #}
+        {% for message in upload_errors[:20] %}
+        <p>{{ message }}</p>
+        {% endfor %}
+        {% if upload_errors|length > 20 %}
+        <p>...and {{ upload_errors|length - 20 }} more</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('upload_schedule') }}" enctype="multipart/form-data">
+
+        <input type="text" name="name" placeholder="Schedule name" maxlength="100" required>
+
+        <input type="file" name="file" accept=".csv" required>
+
+        <button type="submit">Upload Schedule</button>
+
+    </form>
+
+    <h3>All Schedules</h3>
+
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Shifts</th>
+            <th>Created</th>
+        </tr>
+
+        {% for schedule in schedules %}
+        <tr>
+            <td><a href="{{ url_for('edit_schedule', schedule_id=schedule[0]) }}">{{ schedule[1] }}</a></td>
+            <td>{{ schedule[2] }}</td>
+            <td>{{ schedule[3].strftime('%b %d, %Y') }}</td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="3">No schedules yet.</td>
+        </tr>
+        {% endfor %}
+
+    </table>
+
+</div>
+
+</body>
+</html>

@@ -84,3 +84,29 @@ button:hover {
     color: #b00020;
     text-align: center;
 }
+
+.message {
+    color: #1b7f3b;
+    text-align: center;
+}
+
+select {
+    width: 100%;
+    padding: 10px;
+    margin: 8px 0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    box-sizing: border-box;
+}
+
+.shift-table td {
+    padding: 6px;
+}
+
+button.danger {
+    background-color: #b00020;
+}
+
+button.danger:hover {
+    background-color: #7f0017;
+}

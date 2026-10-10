@@ -30,3 +30,28 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 INSERT IGNORE INTO settings (name, value) VALUES ('join_code', 'CHANGE-ME');
+
+-- A schedule is a named set of TA shifts (e.g. "CS 101 Fall 2026")
+-- join_code is unused for now: TAs register with the universal code in settings.
+-- It's kept (empty) in case each schedule gets its own code later.
+CREATE TABLE IF NOT EXISTS schedules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    join_code VARCHAR(50) UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- For databases created before join_code was made optional
+ALTER TABLE schedules MODIFY join_code VARCHAR(50) NULL;
+
+-- One row per shift; deleting a schedule deletes its shifts
+CREATE TABLE IF NOT EXISTS shifts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    schedule_id INT NOT NULL,
+    day VARCHAR(10) NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    location VARCHAR(100),
+    tas_needed INT NOT NULL DEFAULT 1,
+    FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE
+);

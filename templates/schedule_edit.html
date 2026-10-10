@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit Schedule</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="nav">
+        <a href="{{ url_for('admin') }}">Home</a>
+        <a href="{{ url_for('schedules') }}">All Schedules</a>
+        <a href="{{ url_for('join_code') }}">Join Code</a>
+    </div>
+
+    <h1>{{ schedule[1] }}</h1>
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+
+    {% if message %}
+    <p class="message">{{ message }}</p>
+    {% endif %}
+
+    <h3>Schedule Name</h3>
+
+    <form method="POST" action="{{ url_for('update_schedule', schedule_id=schedule[0]) }}">
+
+        <label>Name:</label>
+        <input type="text" name="name" value="{{ schedule[1] }}" maxlength="100" required>
+
+        <button type="submit">Save Name</button>
+
+    </form>
+
+    <h3>Shifts</h3>
+
+    <table class="shift-table">
+        <tr>
+            <th>Day</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Location</th>
+            <th>TAs Needed</th>
+            <th></th>
+            <th></th>
+        </tr>
+
+        {# Inputs use form="..." so each row submits as its own form #}
+        {% for shift in shifts %}
+        <tr>
+            <td>
+                <select name="day" form="shift-{{ shift[0] }}">
+                    {% for day in days %}
+                    <option value="{{ day }}" {% if day == shift[1] %}selected{% endif %}>{{ day }}</option>
+                    {% endfor %}
+                </select>
+            </td>
+            <td><input type="time" name="start_time" value="{{ shift[2] }}" form="shift-{{ shift[0] }}" required></td>
+            <td><input type="time" name="end_time" value="{{ shift[3] }}" form="shift-{{ shift[0] }}" required></td>
+            <td><input type="text" name="location" value="{{ shift[4] or '' }}" maxlength="100" form="shift-{{ shift[0] }}"></td>
+            <td><input type="number" name="tas_needed" value="{{ shift[5] }}" min="1" form="shift-{{ shift[0] }}" required></td>
+            <td>
+                <form id="shift-{{ shift[0] }}" method="POST"
+                      action="{{ url_for('edit_shift', schedule_id=schedule[0], shift_id=shift[0]) }}">
+                    <button type="submit">Save</button>
+                </form>
+            </td>
+            <td>
+                <form method="POST"
+                      action="{{ url_for('delete_shift', schedule_id=schedule[0], shift_id=shift[0]) }}"
+                      onsubmit="return confirm('Delete this shift?');">
+                    <button type="submit" class="danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="7">No shifts yet. Add one below.</td>
+        </tr>
+        {% endfor %}
+
+        <tr>
+            <td>
+                <select name="day" form="add-shift">
+                    {% for day in days %}
+                    <option value="{{ day }}">{{ day }}</option>
+                    {% endfor %}
+                </select>
+            </td>
+            <td><input type="time" name="start_time" form="add-shift" required></td>
+            <td><input type="time" name="end_time" form="add-shift" required></td>
+            <td><input type="text" name="location" placeholder="Location" maxlength="100" form="add-shift"></td>
+            <td><input type="number" name="tas_needed" value="1" min="1" form="add-shift" required></td>
+            <td colspan="2">
+                <form id="add-shift" method="POST"
+                      action="{{ url_for('add_shift', schedule_id=schedule[0]) }}">
+                    <button type="submit">Add Shift</button>
+                </form>
+            </td>
+        </tr>
+
+    </table>
+
+    <h3>Delete Schedule</h3>
+
+    <form method="POST" action="{{ url_for('delete_schedule', schedule_id=schedule[0]) }}"
+          onsubmit="return confirm('Delete this schedule and all of its shifts? This cannot be undone.');">
+        <button type="submit" class="danger">Delete Schedule</button>
+    </form>
+
+</div>
+
+</body>
+</html>
