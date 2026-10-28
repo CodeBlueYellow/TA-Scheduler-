@@ -15,8 +15,11 @@
     <p>Welcome, TA</p>
 
     <div class="nav">
-        <a href="{{ url_for('availability') }}">
-            Submit Availability
+        <a href="{{ url_for('ta_schedules') }}">
+            Schedules &amp; Availability
+        </a>
+        <a href="{{ url_for('my_shifts') }}">
+            My Shifts
         </a>
          <a href="{{ url_for('logout') }}">
             Logout

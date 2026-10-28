@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Assign TAs</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="nav">
+        <a href="{{ url_for('admin') }}">Home</a>
+        <a href="{{ url_for('edit_schedule', schedule_id=schedule[0]) }}">Back to Schedule</a>
+    </div>
+
+    <h1>{{ schedule[1] }}: {% if locked %}Completed Schedule{% else %}Assign TAs{% endif %}</h1>
+
+    {% if errors %}
+    <div class="error">
+        {% for error in errors %}
+        <p>{{ error }}</p>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if message %}
+    <p class="message">{{ message }}</p>
+    {% endif %}
+
+    <h3>Status: {{ schedule[2]|capitalize }}</h3>
+
+    <p>{{ responded }} of {{ ta_count }} TAs have submitted availability.</p>
+
+    {% set editable = schedule[2] == 'open' %}
+
+    {% if schedule[2] == 'draft' %}
+    <p>This schedule is still a draft. Publish it so TAs can submit availability, then assign them here.</p>
+    {% elif schedule[2] == 'filled' %}
+    <p>Every shift is staffed. Approve the schedule, or reject it to make changes.</p>
+
+    <form method="POST" action="{{ url_for('change_schedule_status', schedule_id=schedule[0]) }}">
+        <input type="hidden" name="status" value="approved">
+        <button type="submit">Approve</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('change_schedule_status', schedule_id=schedule[0]) }}">
+        <input type="hidden" name="status" value="open">
+        <button type="submit" class="danger">Reject</button>
+    </form>
+    {% elif schedule[2] == 'approved' %}
+    <p>This schedule is approved. Reopen it if something needs to change.</p>
+
+    <form method="POST" action="{{ url_for('change_schedule_status', schedule_id=schedule[0]) }}">
+        <input type="hidden" name="status" value="open">
+        <button type="submit">Reopen</button>
+    </form>
+    {% endif %}
+
+    {% if locked %}
+    <a href="{{ url_for('export_schedule', schedule_id=schedule[0]) }}">Download CSV</a>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('save_assignments', schedule_id=schedule[0]) }}">
+
+        <table class="shift-table">
+            <tr>
+                <th>Day</th>
+                <th>Time</th>
+                <th>Location</th>
+                <th>Assigned</th>
+                <th>TAs</th>
+            </tr>
+
+            {% for shift in shifts %}
+            {% set picked = assigned.get(shift[0], []) %}
+            <tr>
+                <td>{{ shift[1] }}</td>
+                <td>{{ shift[2] }} - {{ shift[3] }}</td>
+                <td>{{ shift[4] or '' }}</td>
+                <td>{{ picked|length }} of {{ shift[5] }}</td>
+                <td class="assign-list">
+                    {% if locked %}
+                    {% for ta_id, name, level in options[shift[0]] if ta_id in picked %}
+                    <label>{{ name }} ({{ level }})</label>
+                    {% endfor %}
+                    {% else %}
+                    {% for ta_id, name, level in options[shift[0]] %}
+                    {# An Unavailable TA can't be picked, but stays clickable if they were
+                       already assigned so the prof can see the conflict and uncheck them #}
+                    <label>
+                        <input type="checkbox" name="assign-{{ shift[0] }}" value="{{ ta_id }}"
+                               {% if ta_id in picked %}checked{% endif %}
+                               {% if not editable or (level == 'Unavailable' and ta_id not in picked) %}disabled{% endif %}>
+                        {{ name }} ({{ level }})
+                    </label>
+                    {% else %}
+                    No TAs have registered yet.
+                    {% endfor %}
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5">This schedule has no shifts yet.</td>
+            </tr>
+            {% endfor %}
+
+        </table>
+
+        {% if editable and shifts %}
+        <button type="submit">Save Assignments</button>
+        <button type="submit" name="mark_filled" value="1">Save &amp; Mark as Filled</button>
+        {% endif %}
+
+    </form>
+
+</div>
+
+</body>
+</html>

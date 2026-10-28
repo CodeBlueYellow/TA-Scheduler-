@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Shifts</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="nav">
+        <a href="{{ url_for('ta') }}">Home</a>
+        <a href="{{ url_for('ta_schedules') }}">All Schedules</a>
+    </div>
+
+    <h1>My Shifts</h1>
+
+    <p>Shifts from approved schedules only.</p>
+
+    <table>
+        <tr>
+            <th>Schedule</th>
+            <th>Day</th>
+            <th>Time</th>
+            <th>Location</th>
+        </tr>
+
+        {% for shift in shifts %}
+        <tr>
+            <td><a href="{{ url_for('ta_schedule', schedule_id=shift[0]) }}">{{ shift[1] }}</a></td>
+            <td>{{ shift[2] }}</td>
+            <td>{{ shift[3] }} - {{ shift[4] }}</td>
+            <td>{{ shift[5] or '' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="4">You haven't been assigned any shifts yet.</td>
+        </tr>
+        {% endfor %}
+
+    </table>
+
+</div>
+
+</body>
+</html>

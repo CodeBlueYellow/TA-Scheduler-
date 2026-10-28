@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ schedule[1] }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="nav">
+        <a href="{{ url_for('ta') }}">Home</a>
+        <a href="{{ url_for('ta_schedules') }}">All Schedules</a>
+    </div>
+
+    <h1>{{ schedule[1] }}</h1>
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+
+    {% if message %}
+    <p class="message">{{ message }}</p>
+    {% endif %}
+
+    {% set taking_answers = schedule[2] == 'open' %}
+    {% set approved = schedule[2] == 'approved' %}
+
+    <h3>Status: {{ status_label }}</h3>
+
+    {% if taking_answers %}
+    <p>Pick your availability for each shift, then save. You can come back and change it while the schedule is open.</p>
+    {% elif approved %}
+    <p>This schedule is final. Your shifts are highlighted. <a href="{{ url_for('my_shifts') }}">See all my shifts</a></p>
+    {% else %}
+    <p>This schedule is no longer taking availability. Your shifts will show here once it's approved.</p>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('submit_availability', schedule_id=schedule[0]) }}">
+
+        <table class="shift-table">
+            <tr>
+                <th>Day</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Location</th>
+                <th>TAs Needed</th>
+                <th>Your Availability</th>
+                {% if approved %}<th>Assigned</th>{% endif %}
+            </tr>
+
+            {% for shift in shifts %}
+            <tr {% if shift[0] in my_shifts %}class="mine"{% endif %}>
+                <td>{{ shift[1] }}</td>
+                <td>{{ shift[2] }}</td>
+                <td>{{ shift[3] }}</td>
+                <td>{{ shift[4] or '' }}</td>
+                <td>{{ shift[5] }}</td>
+                <td>
+                    {% if taking_answers %}
+                    {# No default answer, so a TA can't save without looking at every shift #}
+                    <select name="shift-{{ shift[0] }}" required>
+                        <option value="" disabled {% if shift[0] not in answers %}selected{% endif %}>Choose...</option>
+                        {% for level in levels %}
+                        <option value="{{ level }}" {% if answers.get(shift[0]) == level %}selected{% endif %}>{{ level }}</option>
+                        {% endfor %}
+                    </select>
+                    {% else %}
+                    {{ answers.get(shift[0], 'No answer') }}
+                    {% endif %}
+                </td>
+                {% if approved %}<td>{% if shift[0] in my_shifts %}<strong>You</strong>{% endif %}</td>{% endif %}
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7">This schedule has no shifts yet.</td>
+            </tr>
+            {% endfor %}
+
+        </table>
+
+        {% if taking_answers and shifts %}
+        <button type="submit">Save Availability</button>
+        {% endif %}
+
+    </form>
+
+</div>
+
+</body>
+</html>

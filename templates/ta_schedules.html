@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Schedules</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="nav">
+        <a href="{{ url_for('ta') }}">Home</a>
+    </div>
+
+    <h1>Schedules</h1>
+
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Shifts</th>
+            <th>Status</th>
+        </tr>
+
+        {% for schedule in schedules %}
+        <tr>
+            <td><a href="{{ url_for('ta_schedule', schedule_id=schedule[0]) }}">{{ schedule[1] }}</a></td>
+            <td>{{ schedule[2] }}</td>
+            <td>{{ status_labels[schedule[3]] }}</td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="3">No schedules have been published yet.</td>
+        </tr>
+        {% endfor %}
+
+    </table>
+
+</div>
+
+</body>
+</html>

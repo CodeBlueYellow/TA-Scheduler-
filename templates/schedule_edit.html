@@ -36,7 +36,38 @@
 
     </form>
 
+    <h3>Status: {{ schedule[2]|capitalize }}</h3>
+
+    <a href="{{ url_for('assign_schedule', schedule_id=schedule[0]) }}">Assign TAs</a>
+
+    {% if schedule[2] == 'draft' %}
+    <p>Only you can see this schedule. Publish it so TAs can view it.</p>
+
+    <form method="POST" action="{{ url_for('change_schedule_status', schedule_id=schedule[0]) }}">
+        <input type="hidden" name="status" value="open">
+        <button type="submit">Publish to TAs</button>
+    </form>
+    {% elif schedule[2] == 'open' %}
+    <p>TAs can see this schedule.</p>
+
+    <form method="POST" action="{{ url_for('change_schedule_status', schedule_id=schedule[0]) }}">
+        <input type="hidden" name="status" value="draft">
+        <button type="submit">Unpublish</button>
+    </form>
+    {% elif schedule[2] == 'filled' %}
+    <p>Every shift is staffed. Approve or reject it on the Assign TAs page.</p>
+    {% elif schedule[2] == 'approved' %}
+    <p>This schedule is approved. Reopen it on the Assign TAs page to make changes.</p>
+    {% endif %}
+
     <h3>Shifts</h3>
+
+    {% if locked %}
+    <p>Shifts are locked while the schedule is {{ schedule[2] }}.</p>
+    {% endif %}
+
+    {# A disabled fieldset disables every input and button inside it #}
+    <fieldset class="plain" {% if locked %}disabled{% endif %}>
 
     <table class="shift-table">
         <tr>
@@ -83,6 +114,7 @@
         </tr>
         {% endfor %}
 
+        {% if not locked %}
         <tr>
             <td>
                 <select name="day" form="add-shift">
@@ -102,8 +134,11 @@
                 </form>
             </td>
         </tr>
+        {% endif %}
 
     </table>
+
+    </fieldset>
 
     <h3>Delete Schedule</h3>
 

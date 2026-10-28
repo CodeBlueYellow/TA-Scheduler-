@@ -110,3 +110,34 @@ button.danger {
 button.danger:hover {
     background-color: #7f0017;
 }
+
+
+/* One TA per line in the assign list; checkboxes shouldn't stretch like text inputs */
+.assign-list label {
+    display: block;
+}
+
+.assign-list input[type="checkbox"] {
+    width: auto;
+    margin: 4px 6px 4px 0;
+}
+
+button + button {
+    margin-top: 8px;
+}
+
+/* Fieldset used only to lock a group of inputs; no visible box */
+fieldset.plain {
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+form + form {
+    margin-top: 8px;
+}
+
+/* A TA's own shifts on an approved schedule */
+tr.mine td {
+    background-color: #e7f1ff;
+}
