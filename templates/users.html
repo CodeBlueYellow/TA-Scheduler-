@@ -9,6 +9,14 @@
     <a class="btn secondary" href="{{ url_for('users') }}">Refresh</a>
 </div>
 
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+
+{% if message %}
+<p class="message">{{ message }}</p>
+{% endif %}
+
 <section class="card">
 
     <table>
@@ -19,6 +27,7 @@
                 <th>Username</th>
                 <th>Contact</th>
                 <th>Role</th>
+                <th></th>
             </tr>
         </thead>
 
@@ -30,6 +39,16 @@
                 <td data-label="Username">{{ user[2] }}</td>
                 <td data-label="Contact">{{ user[3] }}</td>
                 <td data-label="Role">{{ user[4] }}</td>
+                <td>
+                    {% if user[4] == 'TA' %}
+                    {# tojson safely quotes the name for JavaScript, so the attribute uses single quotes #}
+                    <form method="POST" action="{{ url_for('delete_user', user_id=user[0]) }}"
+                          onsubmit='return confirm({{ ("Delete " ~ user[1] ~ "? Their availability answers and shift assignments will be removed too. This cannot be undone.")|tojson }});'>
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="danger">Delete</button>
+                    </form>
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>

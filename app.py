@@ -278,10 +278,7 @@ def ta():
 
     return render_template("ta.html", waiting=waiting, shift_count=shift_count)
 
-@app.route("/users")
-@role_required("Admin")
-def users():
-
+def render_users(error=None, message=None):
     cur = mysql.connection.cursor()
 
     # List columns explicitly so password hashes never reach the page
@@ -293,8 +290,59 @@ def users():
 
     return render_template(
         "users.html",
-        users=data
+        users=data,
+        error=error,
+        message=message
     )
+
+@app.route("/users")
+@role_required("Admin")
+def users():
+    return render_users()
+
+@app.route("/users/<int:user_id>/delete", methods=["POST"]) #admin deletes a TA account
+@role_required("Admin")
+def delete_user(user_id):
+
+    cur = mysql.connection.cursor()
+
+    # role = 'TA' so this can only ever remove TA accounts
+    cur.execute("SELECT name FROM users WHERE id = %s AND role = 'TA'", (user_id,))
+    user = cur.fetchone()
+
+    if not user:
+        cur.close()
+        abort(404)
+
+    # Deleting removes the TA's assignments too, which would leave a finished schedule short.
+    # So schedules that are filled or approved have to be rejected/reopened first
+    cur.execute(
+        f"""
+        SELECT DISTINCT s.name
+        FROM assignments a
+        JOIN shifts sh ON sh.id = a.shift_id
+        JOIN schedules s ON s.id = sh.schedule_id
+        WHERE a.user_id = %s AND s.status IN ({", ".join(["%s"] * len(LOCKED_STATUSES))})
+        ORDER BY s.name
+        """,
+        (user_id, *LOCKED_STATUSES)
+    )
+    locked = [row[0] for row in cur.fetchall()]
+
+    if locked:
+        cur.close()
+        which = "that schedule" if len(locked) == 1 else "those schedules"
+        return render_users(error=(
+            f"{user[0]} can't be deleted because they're assigned to {', '.join(locked)}. "
+            f"Reject or reopen {which} first, then try again."
+        ))
+
+    # Their availability answers and assignments are removed too because of ON DELETE CASCADE
+    cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    mysql.connection.commit()
+    cur.close()
+
+    return render_users(message=f"Deleted {user[0]}.")
 
 def get_schedules():
     cur = mysql.connection.cursor()

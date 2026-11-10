@@ -39,6 +39,10 @@ Your dashboard shows a to-do list of what to do next, so you can always start th
 
 You can also **copy** an old schedule to new dates, which saves time next semester.
 
+## Removing a TA
+
+Open **Users** and click **Delete** next to the TA. This also removes their availability answers and shift assignments. If the TA is assigned to a schedule that's finished or approved, the app won't delete them until you **reject** or **reopen** that schedule, so a finished schedule can't end up short-staffed.
+
 ## If something goes wrong
 
 - **Forgot the admin password?** The person who set up the app can reset it (see Part 2).
