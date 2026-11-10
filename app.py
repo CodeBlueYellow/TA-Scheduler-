@@ -1526,14 +1526,14 @@ def submit_availability(schedule_id):
         return render_ta_schedule(schedule_id, error="Choose an answer for every shift", answers=answers)
 
     cur = mysql.connection.cursor()
-    # The (user_id, shift_id) primary key turns a resubmission into an update.
-    # If the row already exists, ON DUPLICATE KEY UPDATE changes its level instead of
-    # erroring. "AS new" names the row we tried to insert, so new.level is the new answer
+    # The (user_id, shift_id) primary key turns a resubmission into an update:
+    # REPLACE swaps out the old answer for that shift instead of erroring.
+    # It works the same on MySQL and MariaDB. Its delete-then-insert is safe here
+    # because nothing else references these rows
     cur.executemany(
         """
-        INSERT INTO shift_availability (user_id, shift_id, level)
-        VALUES (%s, %s, %s) AS new
-        ON DUPLICATE KEY UPDATE level = new.level
+        REPLACE INTO shift_availability (user_id, shift_id, level)
+        VALUES (%s, %s, %s)
         """,
         [(session["user_id"], shift_id, level) for shift_id, level in answers.items()]
     )
