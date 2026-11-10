@@ -1,43 +1,41 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Users</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% extends "base.html" %}
 
-<body>
-    <div class="container">
+{% block title %}Users{% endblock %}
 
-    <div class="nav">
-        <a href="{{ url_for('admin') }}">Home</a>
-        <a href="{{ url_for('users') }}">Refresh</a>
-    </div>
+{% block content %}
 
-<div class="container">
-
+<div class="page-head">
     <h1>Users</h1>
+    <a class="btn secondary" href="{{ url_for('users') }}">Refresh</a>
+</div>
+
+<section class="card">
 
     <table>
-        <tr>
-            <th>ID</th>
-            <th>Name</th>
-            <th>Username</th>
-            <th>Contact</th>
-            <th>Role</th>
-        </tr>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Contact</th>
+                <th>Role</th>
+            </tr>
+        </thead>
 
-        {% for user in users %}
-        <tr>
-            <td>{{ user[0] }}</td>
-            <td>{{ user[1] }}</td>
-            <td>{{ user[2] }}</td>
-            <td>{{ user[3] }}</td>
-            <td>{{ user[4] }}</td>
-        </tr>
-        {% endfor %}
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td data-label="ID">{{ user[0] }}</td>
+                <td data-label="Name">{{ user[1] }}</td>
+                <td data-label="Username">{{ user[2] }}</td>
+                <td data-label="Contact">{{ user[3] }}</td>
+                <td data-label="Role">{{ user[4] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
 
     </table>
 
-</div>
-</body>
-</html>
+</section>
+
+{% endblock %}

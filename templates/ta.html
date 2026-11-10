@@ -1,32 +1,40 @@
-<!DOCTYPE html>
-<html>
+{% extends "base.html" %}
 
-<head>
-    <title>TA Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% block title %}TA Dashboard{% endblock %}
 
-<body>
+{% block content %}
 
-<div class="container">
+<h1>Welcome, {{ session.get('name') }}</h1>
 
-    <h1>TA Dashboard</h1>
-
-    <p>Welcome, TA</p>
-
-    <div class="nav">
-        <a href="{{ url_for('ta_schedules') }}">
-            Schedules &amp; Availability
-        </a>
-        <a href="{{ url_for('my_shifts') }}">
-            My Shifts
-        </a>
-         <a href="{{ url_for('logout') }}">
-            Logout
-        </a>
+<div class="stats">
+    <div class="stat">
+        <span class="stat-number">{{ waiting|length }}</span>
+        <span class="stat-label">Schedules waiting on you</span>
     </div>
-
+    <div class="stat">
+        <span class="stat-number">{{ shift_count }}</span>
+        <span class="stat-label">Assigned shifts</span>
+    </div>
 </div>
 
-</body>
-</html>
+<section class="card">
+
+    <h3>Next Steps</h3>
+
+    <ul class="task-list">
+        {% for schedule_id, name, unanswered in waiting %}
+        <li>
+            <span class="task-text">
+                Submit availability for {{ name }}
+                ({{ unanswered }} shift{{ '' if unanswered == 1 else 's' }} unanswered)
+            </span>
+            <a class="btn secondary" href="{{ url_for('ta_schedule', schedule_id=schedule_id) }}">Open Schedule</a>
+        </li>
+        {% else %}
+        <li>You're all caught up.</li>
+        {% endfor %}
+    </ul>
+
+</section>
+
+{% endblock %}

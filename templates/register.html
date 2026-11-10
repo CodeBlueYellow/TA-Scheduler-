@@ -1,41 +1,44 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>TA Registration</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block title %}TA Registration{% endblock %}
 
-<div class="container">
+{% block topbar %}{% endblock %}
 
-    <div class="nav">
-        <a href="{{ url_for('login') }}">Back to Login</a>
+{% block content %}
+
+<section class="auth-card">
+
+    <div class="auth-head">
+        <h1>Create TA Account</h1>
     </div>
 
-    <h1>Create TA Account</h1>
+    <div class="auth-body">
 
-    {% if error %}
-    <p class="error">{{ error }}</p>
-    {% endif %}
+        {% if error %}
+        <p class="error">{{ error }}</p>
+        {% endif %}
 
-    <form method="POST">
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-        <input type="text" name="name" placeholder="Full Name" required>
+            <input type="text" name="name" placeholder="Full Name" required>
 
-        <input type="text" name="username" placeholder="Username" required>
+            <input type="text" name="username" placeholder="Username" required>
 
-        <input type="email" name="contact" placeholder="Email" required>
+            <input type="email" name="contact" placeholder="Email" required>
 
-        <input type="password" name="password" placeholder="Password (8+ characters)" minlength="8" required>
+            <input type="password" name="password" placeholder="Password (8+ characters)" minlength="8" required>
 
-        <input type="text" name="join_code" placeholder="Join Code (from your professor)" required>
+            <input type="text" name="join_code" placeholder="Join Code (from your professor)" required>
 
-        <button type="submit">Create Account</button>
+            <button type="submit">Create Account</button>
 
-    </form>
+        </form>
 
-</div>
+        <p><a href="{{ url_for('login') }}">Back to Login</a></p>
 
-</body>
-</html>
+    </div>
+
+</section>
+
+{% endblock %}

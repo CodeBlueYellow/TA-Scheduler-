@@ -1,47 +1,44 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>My Shifts</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block title %}My Shifts{% endblock %}
 
-<div class="container">
+{% block content %}
 
-    <div class="nav">
-        <a href="{{ url_for('ta') }}">Home</a>
-        <a href="{{ url_for('ta_schedules') }}">All Schedules</a>
-    </div>
+<h1>My Shifts</h1>
 
-    <h1>My Shifts</h1>
+<p>Shifts from approved schedules only.</p>
 
-    <p>Shifts from approved schedules only.</p>
+<section class="card">
 
     <table>
-        <tr>
-            <th>Schedule</th>
-            <th>Day</th>
-            <th>Time</th>
-            <th>Location</th>
-        </tr>
+        <thead>
+            <tr>
+                <th>Schedule</th>
+                <th>Type</th>
+                <th>Day</th>
+                <th>Time</th>
+                <th>Location</th>
+            </tr>
+        </thead>
 
-        {% for shift in shifts %}
-        <tr>
-            <td><a href="{{ url_for('ta_schedule', schedule_id=shift[0]) }}">{{ shift[1] }}</a></td>
-            <td>{{ shift[2] }}</td>
-            <td>{{ shift[3] }} - {{ shift[4] }}</td>
-            <td>{{ shift[5] or '' }}</td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="4">You haven't been assigned any shifts yet.</td>
-        </tr>
-        {% endfor %}
+        <tbody>
+            {% for shift in shifts %}
+            <tr>
+                <td data-label="Schedule"><a href="{{ url_for('ta_schedule', schedule_id=shift[0]) }}">{{ shift[1] }}</a></td>
+                <td data-label="Type">{{ shift[6] }}</td>
+                <td data-label="Day">{{ shift[2] }}</td>
+                <td data-label="Time">{{ shift[3]|clock }} - {{ shift[4]|clock }}</td>
+                <td data-label="Location">{{ shift[5] or '' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5">You haven't been assigned any shifts yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
 
     </table>
 
-</div>
+</section>
 
-</body>
-</html>
+{% endblock %}

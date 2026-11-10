@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Best Times{% endblock %}
+
+{% block content %}
+
+<a class="back-link" href="{{ url_for('edit_schedule', schedule_id=schedule[0]) }}">&larr; Back to Schedule</a>
+
+<div class="page-head">
+    <h1>{{ schedule[1] }}: Best Times</h1>
+    <span class="badge {{ schedule[2] }}">{{ schedule[2]|capitalize }}</span>
+</div>
+
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+
+{% if message %}
+<p class="message">{{ message }}</p>
+{% endif %}
+
+<section class="card">
+
+    <p>{{ responded }} of {{ ta_count }} TAs have submitted availability.</p>
+
+    {% if locked %}
+    <p>Shifts are locked while the schedule is {{ schedule[2] }}.</p>
+    {% elif schedule[2] == 'draft' %}
+    <p>Add the help session options, then publish the schedule so TAs can answer them.</p>
+    {% else %}
+    <p>The times most TAs can work are listed first. Check the ones you want, then keep them.</p>
+    {% endif %}
+
+    {% if not locked %}
+    <form method="POST" action="{{ url_for('add_help_options', schedule_id=schedule[0]) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="secondary">Add Help Session Options</button>
+    </form>
+    {% endif %}
+
+    {% if schedule[2] == 'draft' and rows %}
+    <p><a href="{{ url_for('edit_schedule', schedule_id=schedule[0]) }}">Go to the schedule to publish it</a></p>
+    {% endif %}
+
+</section>
+
+<section class="card">
+
+    <form method="POST" action="{{ url_for('keep_help_times', schedule_id=schedule[0]) }}"
+          onsubmit="return confirm('Remove every help session time you did not check? TA answers for those times are removed too.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <table class="shift-table">
+            <thead>
+                <tr>
+                    <th>Day</th>
+                    <th>Time</th>
+                    <th>Can Work</th>
+                    <th>Preferred</th>
+                    <th>TAs</th>
+                    {% if not locked %}<th>Keep</th>{% endif %}
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for shift, groups in rows %}
+                <tr>
+                    <td data-label="Day">{{ shift[1] }}</td>
+                    <td data-label="Time">{{ shift[2]|clock }} - {{ shift[3]|clock }}</td>
+                    <td data-label="Can Work">{{ groups['Preferred']|length + groups['Available']|length }} of {{ ta_count }}</td>
+                    <td data-label="Preferred">{{ groups['Preferred']|length }}</td>
+                    <td class="assign-list" data-label="TAs">
+                        <div>
+                        {% for level in levels %}
+                        {% if groups[level] %}
+                        <p class="time-group"><strong>{{ level }}:</strong> {{ groups[level]|join(', ') }}</p>
+                        {% endif %}
+                        {% endfor %}
+                        {% if not ta_count %}
+                        No TAs have registered yet.
+                        {% endif %}
+                        </div>
+                    </td>
+                    {% if not locked %}
+                    <td class="assign-list" data-label="Keep">
+                        <div>
+                        <label><input type="checkbox" name="keep" value="{{ shift[0] }}"> Keep</label>
+                        </div>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6">No help session times yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+
+        </table>
+
+        {% if rows and not locked %}
+        <button type="submit">Keep Checked Times</button>
+        {% endif %}
+
+    </form>
+
+</section>
+
+{% endblock %}

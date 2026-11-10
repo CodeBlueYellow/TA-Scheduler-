@@ -1,29 +1,57 @@
+import calendar
 import csv
 import io
 import os
 import re
+import time
 from datetime import datetime
 from functools import wraps
+from itertools import combinations
 
+from dotenv import load_dotenv
 from flask import Flask
 from flask_mysqldb import MySQL
+from flask_wtf.csrf import CSRFError, CSRFProtect
 from flask import render_template, request, redirect, url_for, session, abort, Response
 from werkzeug.security import generate_password_hash, check_password_hash
+
+# Reads .env into os.environ, so passwords stay out of the code and out of git
+# Looks next to app.py, so it's found even when a web host starts the app from another folder
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
+def required_setting(name):
+    # Stop right away with a clear message, instead of failing later on some random page
+    value = os.environ.get(name)
+    if not value:
+        raise SystemExit(f"{name} is missing from .env. See .env.example for what to put there.")
+    return value
 
 app = Flask(__name__)
 
 # Secret key signs the session cookie so users can't edit it
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-later")
+app.secret_key = required_setting("SECRET_KEY")
 
-# MySQL stuff
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = 'Password'  # change later
-app.config['MYSQL_DB'] = 'ta_scheduler'
+# Lax stops other sites from sending this cookie along with their form posts
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Every POST must now carry the csrf_token from its form, or it's refused with a 400.
+# A token normally expires after an hour, which would throw away a form left open that long,
+# so None keeps it good until the browser session ends
+app.config['WTF_CSRF_TIME_LIMIT'] = None
+csrf = CSRFProtect(app)
+
+# MySQL stuff. ta_app can only read and change rows, not drop or alter tables
+# Host and database name only need setting when hosted (PythonAnywhere uses its own names)
+app.config['MYSQL_HOST'] = os.environ.get("MYSQL_HOST") or 'localhost'
+app.config['MYSQL_USER'] = required_setting("MYSQL_USER")
+app.config['MYSQL_PASSWORD'] = required_setting("MYSQL_PASSWORD")
+app.config['MYSQL_DB'] = os.environ.get("MYSQL_DB") or 'ta_scheduler'
+
+# The admin account stays hard coded, but only its hash is stored. Set by set_admin_password.py
+ADMIN_PASSWORD_HASH = required_setting("ADMIN_PASSWORD_HASH")
 
 mysql = MySQL(app)
 # How every query works below: cursor() opens a way to send SQL, execute() runs it,
-# fetchone()/fetchall() read the results, commit() saves changes, close() cleans up
 
 # Reject uploads over 1 MB (a schedule CSV is a few KB)
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
@@ -35,12 +63,33 @@ def role_required(role):
     def decorator(view):
         @wraps(view) # keeps the route's real name so url_for() still finds it
         def wrapper(*args, **kwargs):
-            # Not logged in, or logged in as the wrong role -> back to login
             if session.get("role") != role:
                 return redirect(url_for("login"))
             return view(*args, **kwargs) # role matches, run the actual route
         return wrapper
     return decorator
+
+@app.errorhandler(CSRFError)
+def csrf_failed(error):
+    return render_template("expired.html"), 400
+
+# After this many wrong passwords, that login is blocked until the failures are old enough
+MAX_LOGIN_FAILURES = 5
+LOGIN_BLOCK_SECONDS = 300
+
+# {(address, username): [times of recent failures]}. Kept in memory, so a restart clears it
+failed_logins = {}
+
+def recent_failures(attempt):
+    cutoff = time.time() - LOGIN_BLOCK_SECONDS
+    failures = [failed_at for failed_at in failed_logins.get(attempt, []) if failed_at > cutoff]
+
+    if failures:
+        failed_logins[attempt] = failures
+    else:
+        failed_logins.pop(attempt, None) # nothing recent, so stop tracking it
+
+    return failures
 
 @app.route("/", methods=["GET", "POST"]) #Login stuff
 def login():
@@ -53,10 +102,17 @@ def login():
         password = request.form["password"]
         role = request.form["role"]
 
+        # Address and username together, so one person's typos can't block everyone on campus
+        attempt = (request.remote_addr, username.lower())
+
+        if len(recent_failures(attempt)) >= MAX_LOGIN_FAILURES:
+            return render_template("login.html", error="Too many failed attempts. Try again in a few minutes.")
+
         #Hard coded Admin account for Prof Brown
         if role == "Admin":
 
-            if username == "admin" and password == "admin123":
+            if username == "admin" and check_password_hash(ADMIN_PASSWORD_HASH, password):
+                failed_logins.pop(attempt, None)
                 session.clear()
                 session["username"] = username
                 session["role"] = "Admin"
@@ -75,12 +131,15 @@ def login():
 
             # check_password_hash hashes what they typed and compares it to the stored hash
             if user and check_password_hash(user[2], password):
+                failed_logins.pop(attempt, None)
                 session.clear() # wipe any old login before starting a new one
                 session["user_id"] = user[0]
                 session["name"] = user[1]
                 session["username"] = username
                 session["role"] = "TA"
                 return redirect(url_for("ta"))
+
+        failed_logins.setdefault(attempt, []).append(time.time())
 
         # Same message whether the username or the password was wrong
         error = "Invalid username or password"
@@ -164,27 +223,60 @@ def logout():
 @app.route("/admin") #admin dash
 @role_required("Admin")
 def admin():
-    return render_template("admin.html")
+    all_schedules = get_schedules()
+    in_progress = [schedule for schedule in all_schedules if schedule[4] != "approved"]
+
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT COUNT(*) FROM users WHERE role = 'TA'")
+    ta_count = cur.fetchone()[0]
+    cur.close()
+
+    return render_template(
+        "admin.html",
+        in_progress=len(in_progress),
+        approved=len(all_schedules) - len(in_progress),
+        ta_count=ta_count,
+        short=sum(shifts_short(schedule[0]) for schedule in in_progress if schedule[4] == "open"),
+        tasks=admin_tasks(all_schedules, in_progress, ta_count)
+    )
 
 @app.route("/ta") #TA dash
 @role_required("TA")
 def ta():
-    return render_template("ta.html")
-
-@app.route("/home")
-@role_required("Admin")
-def home():
-    return render_template("home.html")
-
-@app.route("/test-db")
-@role_required("Admin")
-def test_db():
-
     cur = mysql.connection.cursor()
-    cur.execute("SELECT 1")
+
+    # Each open schedule with how many of its shifts this TA hasn't answered.
+    # LEFT JOIN keeps unanswered shifts, and COUNT(sa.shift_id) skips them
+    cur.execute(
+        """
+        SELECT s.id, s.name, COUNT(sh.id) - COUNT(sa.shift_id)
+        FROM schedules s
+        JOIN shifts sh ON sh.schedule_id = s.id
+        LEFT JOIN shift_availability sa ON sa.shift_id = sh.id AND sa.user_id = %s
+        WHERE s.status = 'open'
+        GROUP BY s.id
+        ORDER BY s.created_at DESC
+        """,
+        (session["user_id"],)
+    )
+    waiting = [row for row in cur.fetchall() if row[2] > 0]
+
+    # Same rule as My Shifts: only approved schedules count
+    cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM assignments a
+        JOIN shifts sh ON sh.id = a.shift_id
+        JOIN schedules s ON s.id = sh.schedule_id
+        WHERE a.user_id = %s AND s.status = 'approved'
+        """,
+        (session["user_id"],)
+    )
+    shift_count = cur.fetchone()[0]
+
     cur.close()
 
-    return "Database works!"
+    return render_template("ta.html", waiting=waiting, shift_count=shift_count)
 
 @app.route("/users")
 @role_required("Admin")
@@ -209,7 +301,7 @@ def get_schedules():
 
     # LEFT JOIN so empty schedules still show up with 0 shifts
     cur.execute("""
-        SELECT s.id, s.name, COUNT(sh.id), s.created_at, s.status
+        SELECT s.id, s.name, COUNT(sh.id), s.created_at, s.status, s.start_date, s.end_date
         FROM schedules s
         LEFT JOIN shifts sh ON sh.schedule_id = s.id
         GROUP BY s.id
@@ -219,6 +311,31 @@ def get_schedules():
     data = cur.fetchall()
     cur.close()
     return data
+
+def parse_date(value):
+    # Date inputs send "YYYY-MM-DD"; None means blank or not a real date
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+def validate_dates(form):
+    # Returns (start, end, error). Dates are optional, but it's both or neither
+    start_text = form.get("start_date", "").strip()
+    end_text = form.get("end_date", "").strip()
+
+    if not start_text and not end_text:
+        return None, None, None
+
+    start = parse_date(start_text)
+    end = parse_date(end_text)
+
+    if not start or not end:
+        return None, None, "Enter both a start and end date, or leave both blank"
+    if start >= end:
+        return None, None, "Start date must be before end date"
+
+    return start, end, None
 
 def validate_schedule_name(name):
     # Shared by create, upload, and update
@@ -254,6 +371,12 @@ def new_schedule():
     return redirect(url_for("edit_schedule", schedule_id=schedule_id))
 
 UPLOAD_COLUMNS = ["day", "start_time", "end_time", "location", "tas_needed"]
+
+# Lab: a TA's one section for the semester. Help Session: a weekly walk-in session
+SHIFT_TYPES = ["Lab", "Help Session"]
+
+# The inputs in one row of the shift table, in the same order as a shift's values
+SHIFT_FIELDS = UPLOAD_COLUMNS + ["shift_type"]
 
 def read_schedule_csv(file):
     # Returns (shift values, errors). Every row is checked before anything is
@@ -292,6 +415,8 @@ def read_schedule_csv(file):
 
         row["day"] = row["day"].capitalize()
         row["tas_needed"] = row["tas_needed"] or "1"
+        # shift_type is optional so older files still upload; their shifts count as labs
+        row["shift_type"] = row.get("shift_type", "").title() or "Lab"
 
         values, error = validate_shift(row)
 
@@ -339,8 +464,8 @@ def upload_schedule():
         # *values spreads each shift's tuple out into the remaining columns
         cur.executemany(
             """
-            INSERT INTO shifts (schedule_id, day, start_time, end_time, location, tas_needed)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO shifts (schedule_id, day, start_time, end_time, location, tas_needed, shift_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             [(schedule_id, *values) for values in shifts]
         )
@@ -363,6 +488,13 @@ def format_time(value):
     minutes = int(value.total_seconds()) // 60
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
+@app.template_filter("clock")
+def clock(value):
+    # "HH:MM" -> "1:30 PM" for showing on pages. The 24-hour text stays everywhere else,
+    # since the time inputs need it and it sorts/compares correctly
+    hour, minute = map(int, value.split(":")[:2])
+    return f"{hour % 12 or 12}:{minute:02d} {'AM' if hour < 12 else 'PM'}"
+
 def parse_time(value):
     # 24-hour from the time inputs, plus 12-hour ("1:30 PM") since Excel often saves times that way
     # Try each format until one works; None means none of them matched
@@ -379,12 +511,15 @@ def validate_shift(form):
     start = parse_time(form.get("start_time", ""))
     end = parse_time(form.get("end_time", ""))
     location = form.get("location", "").strip()
+    shift_type = form.get("shift_type", "")
 
     try:
         tas_needed = int(form.get("tas_needed", ""))
     except ValueError:
         tas_needed = 0 # not a whole number, so make it fail the "at least 1" check below
 
+    if shift_type not in SHIFT_TYPES:
+        return None, "Shift type must be Lab or Help Session"
     if day not in DAYS:
         return None, "Day must be Monday to Friday"
     if not start or not end:
@@ -396,48 +531,79 @@ def validate_shift(form):
     if tas_needed < 1:
         return None, "TAs needed must be at least 1"
 
-    return (day, start, end, location, tas_needed), None
+    return (day, start, end, location, tas_needed, shift_type), None
 
 def get_schedule(schedule_id):
     cur = mysql.connection.cursor()
-    cur.execute("SELECT id, name, status FROM schedules WHERE id = %s", (schedule_id,))
+    cur.execute("SELECT id, name, status, start_date, end_date FROM schedules WHERE id = %s", (schedule_id,))
     schedule = cur.fetchone()
     cur.close()
 
     if not schedule:
         abort(404) # no schedule with that id -> show "Not Found"
 
-    return schedule # (id, name, status), so schedule[2] is the status
+    return schedule # (id, name, status, start_date, end_date), so schedule[2] is the status
 
 def get_shifts(schedule_id):
     cur = mysql.connection.cursor()
 
     # FIELD() sorts by weekday order instead of alphabetically
     cur.execute("""
-        SELECT id, day, start_time, end_time, location, tas_needed
+        SELECT id, day, start_time, end_time, location, tas_needed, shift_type
         FROM shifts
         WHERE schedule_id = %s
         ORDER BY FIELD(day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'), start_time
     """, (schedule_id,))
 
     # Same rows, but with the times turned into "HH:MM" text for the pages.
-    # Each shift is (id, day, start, end, location, tas_needed)
+    # Each shift is (id, day, start, end, location, tas_needed, shift_type)
     shifts = [
-        (row[0], row[1], format_time(row[2]), format_time(row[3]), row[4], row[5])
+        (row[0], row[1], format_time(row[2]), format_time(row[3]), row[4], row[5], row[6])
         for row in cur.fetchall()
     ]
 
     cur.close()
     return shifts
 
-def render_schedule_edit(schedule_id, error=None, message=None):
+def shift_fields(form, key):
+    # Every input in a shift's row has a name ending with the shift's id
+    return {field: form.get(f"{field}-{key}", "") for field in SHIFT_FIELDS}
+
+def new_shift_rows(form):
+    # Every new row uses the same input names, so getlist returns one list per column
+    # with the rows in page order. zip turns those columns back into rows
+    columns = [form.getlist(f"{field}-new") for field in SHIFT_FIELDS]
+    rows = [dict(zip(SHIFT_FIELDS, values)) for values in zip(*columns)]
+
+    # A row only counts if something was typed into it.
+    # Its day, type, and TA count always have a value, so they can't tell us
+    return [row for row in rows if row["start_time"] or row["end_time"] or row["location"].strip()]
+
+# form is passed in when re-showing the page after an error, so nothing typed is lost
+def render_schedule_edit(schedule_id, error=None, message=None, form=None):
     schedule = get_schedule(schedule_id)
+    shifts = get_shifts(schedule_id)
+
+    details = (schedule[1], schedule[3], schedule[4])
+    new_rows = []
+
+    if form:
+        details = (form.get("name", ""), form.get("start_date", ""), form.get("end_date", ""))
+        new_rows = new_shift_rows(form)
+
+        # Locked shifts send no inputs, so they keep their saved values
+        if schedule[2] not in LOCKED_STATUSES:
+            shifts = [(shift[0], *shift_fields(form, shift[0]).values()) for shift in shifts]
 
     return render_template(
         "schedule_edit.html",
         schedule=schedule,
-        shifts=get_shifts(schedule_id),
+        details=details,
+        shifts=shifts,
+        new_rows=new_rows,
         days=DAYS,
+        shift_types=SHIFT_TYPES,
+        shift_months=SHIFT_MONTHS,
         locked=schedule[2] in LOCKED_STATUSES,
         error=error,
         message=message
@@ -446,30 +612,90 @@ def render_schedule_edit(schedule_id, error=None, message=None):
 @app.route("/schedules/<int:schedule_id>") #admin edits one schedule
 @role_required("Admin")
 def edit_schedule(schedule_id):
-    return render_schedule_edit(schedule_id)
+    # ?saved=1 is added by the redirect after a successful save
+    return render_schedule_edit(schedule_id, message="Changes saved" if request.args.get("saved") else None)
 
-@app.route("/schedules/<int:schedule_id>/update", methods=["POST"]) #rename schedule
+@app.route("/schedules/<int:schedule_id>/save", methods=["POST"]) #one Save for the name, dates, and all shifts
 @role_required("Admin")
-def update_schedule(schedule_id):
+def save_schedule(schedule_id):
 
-    get_schedule(schedule_id)
+    schedule = get_schedule(schedule_id)
 
     name = request.form["name"].strip()
+    start_date, end_date, date_error = validate_dates(request.form)
 
-    error = validate_schedule_name(name)
+    error = validate_schedule_name(name) or date_error
 
+    updates = []
+    deletes = []
+    inserts = []
+
+    # Dates and the name can always change, but shifts stay locked once the schedule is filled
+    if schedule[2] not in LOCKED_STATUSES:
+
+        for number, shift in enumerate(get_shifts(schedule_id), start=1):
+
+            # A Delete button sends its shift's id; that row doesn't need to be valid
+            if request.form.get("delete_shift") == str(shift[0]):
+                deletes.append((shift[0], schedule_id))
+                continue
+
+            values, shift_error = validate_shift(shift_fields(request.form, shift[0]))
+
+            if shift_error:
+                error = error or f"Shift {number}: {shift_error}"
+            else:
+                updates.append((*values, shift[0], schedule_id))
+
+        for number, row in enumerate(new_shift_rows(request.form), start=1):
+            values, shift_error = validate_shift(row)
+
+            if shift_error:
+                error = error or f"New shift {number}: {shift_error}"
+            else:
+                inserts.append((schedule_id, *values))
+
+    # Nothing is saved unless everything is valid
     if error:
-        return render_schedule_edit(schedule_id, error=error)
+        return render_schedule_edit(schedule_id, error=error, form=request.form)
 
     cur = mysql.connection.cursor()
-    cur.execute(
-        "UPDATE schedules SET name = %s WHERE id = %s",
-        (name, schedule_id)
-    )
-    mysql.connection.commit()
-    cur.close()
 
-    return render_schedule_edit(schedule_id, message="Schedule updated")
+    try:
+        cur.execute(
+            "UPDATE schedules SET name = %s, start_date = %s, end_date = %s WHERE id = %s",
+            (name, start_date, end_date, schedule_id)
+        )
+
+        # schedule_id in the WHERE keeps these changes inside this schedule
+        cur.executemany(
+            """
+            UPDATE shifts
+            SET day = %s, start_time = %s, end_time = %s, location = %s, tas_needed = %s, shift_type = %s
+            WHERE id = %s AND schedule_id = %s
+            """,
+            updates
+        )
+        cur.executemany("DELETE FROM shifts WHERE id = %s AND schedule_id = %s", deletes)
+
+        cur.executemany(
+            """
+            INSERT INTO shifts (schedule_id, day, start_time, end_time, location, tas_needed, shift_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            inserts
+        )
+
+        # One commit for everything, so it's all or nothing
+        mysql.connection.commit()
+    except Exception:
+        mysql.connection.rollback()
+        raise
+    finally:
+        cur.close()
+
+    # Redirect so refreshing the page can't add the new shifts a second time
+    return redirect(url_for("edit_schedule", schedule_id=schedule_id, saved=1))
 
 # Schedule life cycle: draft -> open -> filled -> approved
 #   draft: only the prof sees it    open: TAs submit availability, prof assigns
@@ -527,6 +753,85 @@ def change_schedule_status(schedule_id):
         return render_assign(schedule_id, message=STATUS_CHANGES[change])
     return render_schedule_edit(schedule_id, message=STATUS_CHANGES[change])
 
+# How far the prof can move a schedule's dates when copying it
+SHIFT_MONTHS = [1, 5, 8, 12]
+
+def add_months(day, months):
+    # Count months from year 0 so going past December rolls into the next year
+    total = day.year * 12 + day.month - 1 + months
+    year, month = total // 12, total % 12 + 1
+
+    # Jan 31 + 1 month has no Feb 31, so stop at the last day of the new month.
+    # monthrange returns (first weekday, number of days)
+    last_day = calendar.monthrange(year, month)[1]
+
+    return day.replace(year=year, month=month, day=min(day.day, last_day))
+
+def new_dates(schedule, form):
+    # Returns (start, end, error) for a copy of the schedule
+    shift_by = form.get("shift_by", "")
+
+    if shift_by == "custom":
+        start, end, error = validate_dates(form)
+        # validate_dates allows two blanks, but a copy has to end up with dates
+        if not start and not error:
+            error = "Enter a start and end date for the new schedule"
+        return start, end, error
+
+    if not shift_by.isdigit() or int(shift_by) not in SHIFT_MONTHS:
+        return None, None, "Choose how far to move the dates"
+    if not schedule[3]:
+        return None, None, "This schedule has no dates to move. Enter new dates instead."
+
+    months = int(shift_by)
+    return add_months(schedule[3], months), add_months(schedule[4], months), None
+
+@app.route("/schedules/<int:schedule_id>/copy", methods=["POST"]) #admin copies a schedule to new dates
+@role_required("Admin")
+def copy_schedule(schedule_id):
+
+    schedule = get_schedule(schedule_id)
+
+    name = request.form["name"].strip()
+    start_date, end_date, date_error = new_dates(schedule, request.form)
+
+    error = validate_schedule_name(name) or date_error
+
+    if error:
+        return render_schedule_edit(schedule_id, error=error)
+
+    cur = mysql.connection.cursor()
+
+    try:
+        # status isn't listed, so the copy starts as a draft
+        cur.execute(
+            "INSERT INTO schedules (name, start_date, end_date) VALUES (%s, %s, %s)",
+            (name, start_date, end_date)
+        )
+        new_id = cur.lastrowid
+
+        # INSERT ... SELECT copies the rows inside MySQL. Availability and assignments
+        # are left behind because each term has different TAs and class schedules
+        cur.execute(
+            """
+            INSERT INTO shifts (schedule_id, day, start_time, end_time, location, tas_needed, shift_type)
+            SELECT %s, day, start_time, end_time, location, tas_needed, shift_type
+            FROM shifts
+            WHERE schedule_id = %s
+            """,
+            (new_id, schedule_id)
+        )
+
+        # One commit for the schedule and its shifts, so it's all or nothing
+        mysql.connection.commit()
+    except Exception:
+        mysql.connection.rollback()
+        raise
+    finally:
+        cur.close()
+
+    return redirect(url_for("edit_schedule", schedule_id=new_id))
+
 @app.route("/schedules/<int:schedule_id>/delete", methods=["POST"])
 @role_required("Admin")
 def delete_schedule(schedule_id):
@@ -541,89 +846,11 @@ def delete_schedule(schedule_id):
 
     return redirect(url_for("schedules"))
 
-SHIFTS_LOCKED_ERROR = "Shifts can't be changed while the schedule is filled or approved. Reject or reopen it first."
-
-@app.route("/schedules/<int:schedule_id>/shifts/add", methods=["POST"])
-@role_required("Admin")
-def add_shift(schedule_id):
-
-    schedule = get_schedule(schedule_id)
-
-    if schedule[2] in LOCKED_STATUSES:
-        return render_schedule_edit(schedule_id, error=SHIFTS_LOCKED_ERROR)
-
-    values, error = validate_shift(request.form)
-
-    if error:
-        return render_schedule_edit(schedule_id, error=error)
-
-    cur = mysql.connection.cursor()
-    cur.execute(
-        """
-        INSERT INTO shifts (schedule_id, day, start_time, end_time, location, tas_needed)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """,
-        (schedule_id, *values)
-    )
-    mysql.connection.commit()
-    cur.close()
-
-    return redirect(url_for("edit_schedule", schedule_id=schedule_id))
-
-@app.route("/schedules/<int:schedule_id>/shifts/<int:shift_id>/edit", methods=["POST"])
-@role_required("Admin")
-def edit_shift(schedule_id, shift_id):
-
-    schedule = get_schedule(schedule_id)
-
-    if schedule[2] in LOCKED_STATUSES:
-        return render_schedule_edit(schedule_id, error=SHIFTS_LOCKED_ERROR)
-
-    values, error = validate_shift(request.form)
-
-    if error:
-        return render_schedule_edit(schedule_id, error=error)
-
-    cur = mysql.connection.cursor()
-
-    # schedule_id in the WHERE stops editing a shift through another schedule's URL
-    cur.execute(
-        """
-        UPDATE shifts
-        SET day = %s, start_time = %s, end_time = %s, location = %s, tas_needed = %s
-        WHERE id = %s AND schedule_id = %s
-        """,
-        (*values, shift_id, schedule_id)
-    )
-    mysql.connection.commit()
-    cur.close()
-
-    return render_schedule_edit(schedule_id, message="Shift updated")
-
-@app.route("/schedules/<int:schedule_id>/shifts/<int:shift_id>/delete", methods=["POST"])
-@role_required("Admin")
-def delete_shift(schedule_id, shift_id):
-
-    schedule = get_schedule(schedule_id)
-
-    if schedule[2] in LOCKED_STATUSES:
-        return render_schedule_edit(schedule_id, error=SHIFTS_LOCKED_ERROR)
-
-    cur = mysql.connection.cursor()
-    cur.execute(
-        "DELETE FROM shifts WHERE id = %s AND schedule_id = %s",
-        (shift_id, schedule_id)
-    )
-    mysql.connection.commit()
-    cur.close()
-
-    return redirect(url_for("edit_schedule", schedule_id=schedule_id))
-
 # Order TAs are listed in when assigning: best fit first
 LEVEL_ORDER = {"Preferred": 0, "Available": 1, "No answer": 2, "Unavailable": 3}
 
 def shift_label(shift):
-    return f"{shift[1]} {shift[2]}-{shift[3]}"
+    return f"{shift[1]} {clock(shift[2])}-{clock(shift[3])}"
 
 def get_tas_and_answers(schedule_id):
     # Returns every TA as (id, name), and their answers as {(shift_id, user_id): level}
@@ -668,6 +895,30 @@ def get_assignments(schedule_id):
     cur.close()
     return assigned
 
+def find_conflicts(shifts, assigned, tas, answers):
+    # Returns a list of (text, shift ids), one for each conflict.
+    # Two help sessions isn't a conflict: the prof may need that when few TAs are free
+    conflicts = []
+
+    for ta_id, name in tas:
+        mine = [shift for shift in shifts if ta_id in assigned.get(shift[0], ())]
+
+        # A TA can change their answer to Unavailable after being assigned
+        for shift in mine:
+            if answers.get((shift[0], ta_id)) == "Unavailable":
+                conflicts.append((f"{name} is now Unavailable for {shift_label(shift)}", [shift[0]]))
+
+        # combinations gives every pair of this TA's shifts once
+        for first, second in combinations(mine, 2):
+            pair = f"{shift_label(first)} and {shift_label(second)}"
+
+            if shifts_overlap(first, second):
+                conflicts.append((f"{name} has overlapping shifts: {pair}", [first[0], second[0]]))
+            elif first[6] == "Lab" and second[6] == "Lab":
+                conflicts.append((f"{name} has two labs: {pair}", [first[0], second[0]]))
+
+    return conflicts
+
 def fill_problems(schedule_id):
     # Everything stopping the schedule from being marked filled; empty means it's ready
     shifts = get_shifts(schedule_id)
@@ -675,7 +926,7 @@ def fill_problems(schedule_id):
     if not shifts:
         return ["The schedule has no shifts"]
 
-    _, answers = get_tas_and_answers(schedule_id) # _ means "ignore this one" (the TA list isn't needed)
+    tas, answers = get_tas_and_answers(schedule_id)
     assigned = get_assignments(schedule_id)
 
     problems = []
@@ -683,11 +934,134 @@ def fill_problems(schedule_id):
         picked = assigned.get(shift[0], set())
         if len(picked) != shift[5]:
             problems.append(f"{shift_label(shift)} has {len(picked)} of {shift[5]} TAs")
-        # A TA can change their answer to Unavailable after being assigned
-        if any(answers.get((shift[0], user_id)) == "Unavailable" for user_id in picked):
-            problems.append(f"{shift_label(shift)} has a TA who is now Unavailable")
 
-    return problems
+    # The _ ignores the shift ids, which only the assign page needs
+    return problems + [text for text, _ in find_conflicts(shifts, assigned, tas, answers)]
+
+def shifts_short(schedule_id):
+    # How many of the schedule's shifts have fewer TAs than they need
+    assigned = get_assignments(schedule_id)
+    return sum(1 for shift in get_shifts(schedule_id) if len(assigned.get(shift[0], ())) < shift[5])
+
+def next_step(schedule):
+    # What the prof should do next on an unfinished schedule, as (text, url, link text)
+    schedule_id, name, shift_count, _, status = schedule[:5]
+    edit_url = url_for("edit_schedule", schedule_id=schedule_id)
+    assign_url = url_for("assign_schedule", schedule_id=schedule_id)
+
+    if status == "draft" and shift_count == 0:
+        return f"Add shifts to {name}", edit_url, "Add Shifts"
+    if status == "draft":
+        return f"Publish {name} so TAs can submit availability", edit_url, "Open Schedule"
+    if status == "filled":
+        return f"Approve or reject {name}", assign_url, "Review"
+
+    if too_many_help_times(get_shifts(schedule_id)):
+        return f"Choose the help session times for {name}", url_for("best_times", schedule_id=schedule_id), "Best Times"
+
+    if fill_problems(schedule_id):
+        tas, answers = get_tas_and_answers(schedule_id)
+        responded = len({user_id for _, user_id in answers})
+        return f"Assign TAs to {name} ({responded} of {len(tas)} TAs have responded)", assign_url, "Assign TAs"
+
+    return f"Mark {name} as filled", assign_url, "Review"
+
+def admin_tasks(all_schedules, in_progress, ta_count):
+    # The dashboard to-do list, as (text, url, link text, status). Status is None for app-wide tasks
+    tasks = []
+
+    if get_join_code() == "CHANGE-ME":
+        tasks.append(("Change the default join code before sharing it", url_for("join_code"), "Change Code", None))
+    elif ta_count == 0:
+        tasks.append(("Share the join code so TAs can register", url_for("join_code"), "View Code", None))
+
+    if not all_schedules:
+        tasks.append(("Create your first schedule", url_for("schedules"), "Get Started", None))
+
+    for schedule in in_progress:
+        tasks.append((*next_step(schedule), schedule[4]))
+
+    return tasks
+
+# Auto-fill stops after this many tries and keeps the best answer it found.
+# Only a huge schedule gets near this; it keeps the page from hanging
+MAX_FILL_STEPS = 200000
+
+def shifts_overlap(a, b):
+    # "HH:MM" text sorts in time order, so < works here.
+    # Two shifts overlap when each one starts before the other ends
+    return a[1] == b[1] and a[2] < b[3] and b[2] < a[3]
+
+def can_take(shift, held):
+    # held is the shifts a TA already has. A TA gets at most one of each type
+    # (one lab, one help session, so 3-5 hours a week) and never two at once
+    return not any(other[6] == shift[6] or shifts_overlap(shift, other) for other in held)
+
+def auto_fill(shifts, tas, answers):
+    # Picks TAs for every shift and returns {shift_id: set of user_ids}.
+    # Tries the possible combinations and keeps the best one, where best means:
+    #   1. the most spots filled   2. the most Preferred picks
+    #   3. the fewest TAs with two shifts, so the work is spread out
+
+    # Who said yes to each shift, best answers first. No answer doesn't count as a yes
+    willing = {}
+    for shift in shifts:
+        rows = [(ta_id, answers.get((shift[0], ta_id))) for ta_id, _ in tas]
+        rows = [row for row in rows if row[1] in ("Preferred", "Available")]
+        willing[shift[0]] = sorted(rows, key=lambda row: LEVEL_ORDER[row[1]])
+
+    # One entry per TA needed, hardest shifts first, because they have the fewest options.
+    # min() is there because a shift can't use more TAs than said yes to it
+    spots = []
+    for shift in sorted(shifts, key=lambda shift: len(willing[shift[0]])):
+        spots.extend([shift] * min(shift[5], len(willing[shift[0]])))
+
+    held = {ta_id: [] for ta_id, _ in tas} # the shifts each TA has so far
+    picks = [] # the (shift_id, ta_id) pairs chosen so far
+    best_score = (-1, 0, 0)
+    best_picks = []
+    steps = 0
+
+    # Backtracking: try a TA for this spot, work through the remaining spots,
+    # then undo that choice and try the next TA
+    def search(index, filled, preferred, doubled):
+        nonlocal best_score, best_picks, steps
+        steps += 1
+
+        # Tuples compare left to right, which matches the order of the rules above.
+        # This is the best this path could still reach; if that can't beat
+        # the best answer so far, there's no point going further
+        left = len(spots) - index
+        if steps > MAX_FILL_STEPS or (filled + left, preferred + left, -doubled) <= best_score:
+            return
+
+        if left == 0:
+            best_score = (filled, preferred, -doubled)
+            best_picks = list(picks)
+            return
+
+        shift = spots[index]
+
+        for ta_id, level in willing[shift[0]]:
+            if can_take(shift, held[ta_id]):
+                has_shift = len(held[ta_id]) > 0
+
+                held[ta_id].append(shift)
+                picks.append((shift[0], ta_id))
+                search(index + 1, filled + 1, preferred + (level == "Preferred"), doubled + has_shift)
+                picks.pop() # undo, so the next TA starts from the same place
+                held[ta_id].pop()
+
+        # Also try leaving this spot empty, since that can free a TA for a harder shift
+        search(index + 1, filled, preferred, doubled)
+
+    search(0, 0, 0, 0)
+
+    assigned = {}
+    for shift_id, ta_id in best_picks:
+        assigned.setdefault(shift_id, set()).add(ta_id)
+
+    return assigned
 
 def render_assign(schedule_id, errors=None, message=None, assigned=None):
     schedule = get_schedule(schedule_id)
@@ -705,6 +1079,14 @@ def render_assign(schedule_id, errors=None, message=None, assigned=None):
         rows = [(ta_id, name, answers.get((shift[0], ta_id), "No answer")) for ta_id, name in tas]
         options[shift[0]] = sorted(rows, key=lambda row: LEVEL_ORDER[row[2]])
 
+    conflicts = find_conflicts(shifts, assigned, tas, answers)
+
+    # {shift_id: conflict texts}, so each row can show its own. A pair shows on both of its rows
+    conflict_notes = {}
+    for text, shift_ids in conflicts:
+        for shift_id in shift_ids:
+            conflict_notes.setdefault(shift_id, []).append(text)
+
     return render_template(
         "schedule_assign.html",
         schedule=schedule,
@@ -712,6 +1094,9 @@ def render_assign(schedule_id, errors=None, message=None, assigned=None):
         shifts=shifts,
         options=options,
         assigned=assigned,
+        conflict_count=len(conflicts),
+        conflict_notes=conflict_notes,
+        too_many_help=too_many_help_times(shifts),
         responded=len({user_id for _, user_id in answers}), # a set counts each TA once, however many shifts they answered
         ta_count=len(tas),
         errors=errors,
@@ -722,6 +1107,31 @@ def render_assign(schedule_id, errors=None, message=None, assigned=None):
 @role_required("Admin")
 def assign_schedule(schedule_id):
     return render_assign(schedule_id)
+
+@app.route("/schedules/<int:schedule_id>/autofill", methods=["POST"]) #admin asks for suggested assignments
+@role_required("Admin")
+def autofill_schedule(schedule_id):
+
+    schedule = get_schedule(schedule_id)
+
+    if schedule[2] != "open":
+        return render_assign(schedule_id, errors=["Auto-fill only works while the schedule is open"])
+
+    shifts = get_shifts(schedule_id)
+    tas, answers = get_tas_and_answers(schedule_id)
+
+    assigned = auto_fill(shifts, tas, answers)
+
+    short = [f"{shift_label(shift)} has {len(assigned.get(shift[0], ()))} of {shift[5]} TAs"
+             for shift in shifts if len(assigned.get(shift[0], ())) < shift[5]]
+
+    # Nothing is written here: the picks go back as checked boxes for the prof to review and save
+    return render_assign(
+        schedule_id,
+        errors=["Auto-fill couldn't staff every shift:"] + short if short else None,
+        message="Auto-fill checked the boxes below. Review them, then save. Nothing is saved yet.",
+        assigned=assigned
+    )
 
 @app.route("/schedules/<int:schedule_id>/assign", methods=["POST"])
 @role_required("Admin")
@@ -793,6 +1203,121 @@ def save_assignments(schedule_id):
 
     return render_assign(schedule_id, message="Schedule marked as filled. Assignments are now locked.")
 
+# The prof holds this many help sessions a week
+HELP_SESSIONS_PER_WEEK = 2
+
+# Options run Monday to Thursday in the 4-9 PM window: 2 hours long, starting on the hour
+HELP_OPTION_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday"]
+HELP_OPTION_STARTS = [16, 17, 18, 19]
+HELP_OPTION_HOURS = 2
+
+def help_shifts(shifts):
+    return [shift for shift in shifts if shift[6] == "Help Session"]
+
+def too_many_help_times(shifts):
+    return len(help_shifts(shifts)) > HELP_SESSIONS_PER_WEEK
+
+def rank_help_times(shifts, tas, answers):
+    # Returns a list of (shift, {level: TA names}), the times most TAs can work first
+    rows = []
+
+    for shift in help_shifts(shifts):
+        groups = {level: [] for level in LEVEL_ORDER}
+
+        for ta_id, name in tas:
+            groups[answers.get((shift[0], ta_id), "No answer")].append(name)
+
+        rows.append((shift, groups))
+
+    # Most TAs who can work, then most Preferred. The minus signs put big numbers first.
+    # sorted() keeps ties in the order they came in, which is by day and time
+    return sorted(rows, key=lambda row: (
+        -(len(row[1]["Preferred"]) + len(row[1]["Available"])),
+        -len(row[1]["Preferred"])
+    ))
+
+def render_best_times(schedule_id, error=None, message=None):
+    schedule = get_schedule(schedule_id)
+    tas, answers = get_tas_and_answers(schedule_id)
+
+    return render_template(
+        "best_times.html",
+        schedule=schedule,
+        rows=rank_help_times(get_shifts(schedule_id), tas, answers),
+        levels=LEVEL_ORDER, # looping over a dict gives its keys, best answers first
+        locked=schedule[2] in LOCKED_STATUSES,
+        responded=len({user_id for _, user_id in answers}),
+        ta_count=len(tas),
+        error=error,
+        message=message
+    )
+
+@app.route("/schedules/<int:schedule_id>/best-times") #admin compares help session times
+@role_required("Admin")
+def best_times(schedule_id):
+    return render_best_times(schedule_id)
+
+@app.route("/schedules/<int:schedule_id>/best-times/options", methods=["POST"]) #admin adds the usual time options
+@role_required("Admin")
+def add_help_options(schedule_id):
+
+    schedule = get_schedule(schedule_id)
+
+    if schedule[2] in LOCKED_STATUSES:
+        return render_best_times(schedule_id, error="Shifts are locked while the schedule is filled or approved")
+
+    # Skip times already on the schedule, so clicking twice can't make duplicates
+    existing = {(shift[1], shift[2], shift[3]) for shift in help_shifts(get_shifts(schedule_id))}
+
+    options = []
+    for day in HELP_OPTION_DAYS:
+        for start in HELP_OPTION_STARTS:
+            start_time = f"{start}:00"
+            end_time = f"{start + HELP_OPTION_HOURS}:00"
+
+            if (day, start_time, end_time) not in existing:
+                options.append((schedule_id, day, start_time, end_time))
+
+    cur = mysql.connection.cursor()
+    cur.executemany(
+        """
+        INSERT INTO shifts (schedule_id, day, start_time, end_time, shift_type)
+        VALUES (%s, %s, %s, %s, 'Help Session')
+        """,
+        options
+    )
+    mysql.connection.commit()
+    cur.close()
+
+    return render_best_times(schedule_id, message=f"Added {len(options)} help session options")
+
+@app.route("/schedules/<int:schedule_id>/best-times/keep", methods=["POST"]) #admin keeps the chosen times
+@role_required("Admin")
+def keep_help_times(schedule_id):
+
+    schedule = get_schedule(schedule_id)
+
+    if schedule[2] in LOCKED_STATUSES:
+        return render_best_times(schedule_id, error="Shifts are locked while the schedule is filled or approved")
+
+    options = help_shifts(get_shifts(schedule_id))
+    keep = request.form.getlist("keep")
+
+    # Compared as text, since that's how the checkboxes send ids.
+    # Going through this schedule's own shifts means a tampered id can't touch another schedule
+    removed = [(shift[0], schedule_id) for shift in options if str(shift[0]) not in keep]
+
+    if len(removed) == len(options):
+        return render_best_times(schedule_id, error="Check at least one time to keep")
+
+    cur = mysql.connection.cursor()
+    # ON DELETE CASCADE also removes the TA answers for these shifts
+    cur.executemany("DELETE FROM shifts WHERE id = %s AND schedule_id = %s", removed)
+    mysql.connection.commit()
+    cur.close()
+
+    return render_best_times(schedule_id, message=f"Kept {len(options) - len(removed)} help session times. Add a room to each on the schedule page, then assign TAs.")
+
 def csv_safe(value):
     # Excel runs cells starting with these as formulas, and names/locations are typed
     # in by users, so a leading ' makes Excel show them as plain text instead
@@ -820,7 +1345,7 @@ def export_schedule(schedule_id):
 
     # Same columns as the upload template plus assigned_tas, which upload ignores,
     # so an export can be uploaded again as next term's starting schedule
-    writer.writerow(UPLOAD_COLUMNS + ["assigned_tas"])
+    writer.writerow(UPLOAD_COLUMNS + ["shift_type", "assigned_tas"])
 
     for shift in get_shifts(schedule_id):
         ta_names = sorted(names[user_id] for user_id in assigned.get(shift[0], set()))
@@ -828,6 +1353,7 @@ def export_schedule(schedule_id):
             shift[1], shift[2], shift[3],
             csv_safe(shift[4] or ""),
             shift[5],
+            shift[6],
             "; ".join(csv_safe(name) for name in ta_names)
         ])
 
@@ -978,7 +1504,7 @@ def my_shifts():
     # Only approved schedules, since assignments can still change before that
     cur.execute(
         """
-        SELECT s.id, s.name, sh.day, sh.start_time, sh.end_time, sh.location
+        SELECT s.id, s.name, sh.day, sh.start_time, sh.end_time, sh.location, sh.shift_type
         FROM assignments a
         JOIN shifts sh ON sh.id = a.shift_id
         JOIN schedules s ON s.id = sh.schedule_id
@@ -989,7 +1515,7 @@ def my_shifts():
     )
 
     shifts = [
-        (row[0], row[1], row[2], format_time(row[3]), format_time(row[4]), row[5])
+        (row[0], row[1], row[2], format_time(row[3]), format_time(row[4]), row[5], row[6])
         for row in cur.fetchall()
     ]
 
@@ -998,4 +1524,5 @@ def my_shifts():
     return render_template("my_shifts.html", shifts=shifts)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # The debugger can run code from the browser, so it's off unless .env turns it on
+    app.run(debug=os.environ.get("FLASK_DEBUG") == "1")

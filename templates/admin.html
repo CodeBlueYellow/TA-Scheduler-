@@ -1,32 +1,48 @@
-<!DOCTYPE html>
-<html>
+{% extends "base.html" %}
 
-<head>
-    <title>Admin Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% block title %}Admin Dashboard{% endblock %}
 
-<body>
+{% block content %}
 
-<div class="container">
+<h1>Welcome, Admin</h1>
 
-    <h1>Admin Dashboard</h1>
-
-    <p>Welcome, Admin</p>
-
-    <div class="nav">
-        <a href="{{ url_for('schedules') }}">Schedules</a>
-
-        <a href="{{ url_for('join_code') }}">Join Code</a>
-
-        <a href="{{ url_for('users') }}">View Users</a>
-
-        <a href="{{ url_for('logout') }}">
-            Logout
-        </a>
+<div class="stats">
+    <div class="stat">
+        <span class="stat-number">{{ in_progress }}</span>
+        <span class="stat-label">Schedules in progress</span>
     </div>
-
+    <div class="stat">
+        <span class="stat-number">{{ approved }}</span>
+        <span class="stat-label">Schedules approved</span>
+    </div>
+    <div class="stat">
+        <span class="stat-number">{{ ta_count }}</span>
+        <span class="stat-label">TAs registered</span>
+    </div>
+    <div class="stat">
+        <span class="stat-number">{{ short }}</span>
+        <span class="stat-label">Open shifts needing TAs</span>
+    </div>
 </div>
 
-</body>
-</html>
+<section class="card">
+
+    <h3>Next Steps</h3>
+
+    <ul class="task-list">
+        {% for text, url, link_text, status in tasks %}
+        <li>
+            <span class="task-text">
+                {% if status %}<span class="badge {{ status }}">{{ status|capitalize }}</span>{% endif %}
+                {{ text }}
+            </span>
+            <a class="btn secondary" href="{{ url }}">{{ link_text }}</a>
+        </li>
+        {% else %}
+        <li>You're all caught up.</li>
+        {% endfor %}
+    </ul>
+
+</section>
+
+{% endblock %}

@@ -1,4 +1,4 @@
-day,start_time,end_time,location,tas_needed
-Monday,09:00,11:00,Lab 204,2
-Wednesday,13:00,15:00,Office Hours,1
-Friday,10:00,12:00,Lab 204,2
+day,start_time,end_time,location,tas_needed,shift_type
+Monday,09:00,12:00,Lab 204,1,Lab
+Wednesday,16:00,18:00,Room 110,1,Help Session
+Friday,10:00,13:00,Lab 204,1,Lab

@@ -1,19 +1,12 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Join Code</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block title %}Join Code{% endblock %}
 
-<div class="container">
+{% block content %}
 
-    <div class="nav">
-        <a href="{{ url_for('admin') }}">Home</a>
-    </div>
+<h1>TA Join Code</h1>
 
-    <h1>TA Join Code</h1>
+<section class="card narrow">
 
     <p>Current code: <strong>{{ join_code }}</strong></p>
     <p>Give this code to your TAs so they can create an account.</p>
@@ -23,6 +16,7 @@
     {% endif %}
 
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <input type="text" name="join_code" placeholder="New join code" required>
 
@@ -30,7 +24,6 @@
 
     </form>
 
-</div>
+</section>
 
-</body>
-</html>
+{% endblock %}

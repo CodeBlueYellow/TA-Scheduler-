@@ -1,42 +1,38 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Schedules</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block title %}Schedules{% endblock %}
 
-<div class="container">
+{% block content %}
 
-    <div class="nav">
-        <a href="{{ url_for('ta') }}">Home</a>
-    </div>
+<h1>Schedules</h1>
 
-    <h1>Schedules</h1>
+<section class="card">
 
     <table>
-        <tr>
-            <th>Name</th>
-            <th>Shifts</th>
-            <th>Status</th>
-        </tr>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Shifts</th>
+                <th>Status</th>
+            </tr>
+        </thead>
 
-        {% for schedule in schedules %}
-        <tr>
-            <td><a href="{{ url_for('ta_schedule', schedule_id=schedule[0]) }}">{{ schedule[1] }}</a></td>
-            <td>{{ schedule[2] }}</td>
-            <td>{{ status_labels[schedule[3]] }}</td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="3">No schedules have been published yet.</td>
-        </tr>
-        {% endfor %}
+        <tbody>
+            {% for schedule in schedules %}
+            <tr>
+                <td data-label="Name"><a href="{{ url_for('ta_schedule', schedule_id=schedule[0]) }}">{{ schedule[1] }}</a></td>
+                <td data-label="Shifts">{{ schedule[2] }}</td>
+                <td data-label="Status"><span class="badge {{ schedule[3] }}">{{ status_labels[schedule[3]] }}</span></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="3">No schedules have been published yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
 
     </table>
 
-</div>
+</section>
 
-</body>
-</html>
+{% endblock %}

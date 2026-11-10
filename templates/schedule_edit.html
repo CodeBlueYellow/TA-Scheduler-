@@ -1,64 +1,110 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Edit Schedule</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block title %}Edit Schedule{% endblock %}
 
-<div class="container">
+{# One unsaved shift row. Used by the Add Shift button and when re-showing rows after an error #}
+{% macro new_shift_row(row={}) %}
+<tr>
+    <td data-label="Type">
+        <select name="shift_type-new" form="edit-schedule">
+            {% for shift_type in shift_types %}
+            <option value="{{ shift_type }}" {% if shift_type == row.get('shift_type') %}selected{% endif %}>{{ shift_type }}</option>
+            {% endfor %}
+        </select>
+    </td>
+    <td data-label="Day">
+        <select name="day-new" form="edit-schedule">
+            {% for day in days %}
+            <option value="{{ day }}" {% if day == row.get('day') %}selected{% endif %}>{{ day }}</option>
+            {% endfor %}
+        </select>
+    </td>
+    <td data-label="Start"><input type="time" name="start_time-new" value="{{ row.get('start_time', '') }}" form="edit-schedule"></td>
+    <td data-label="End"><input type="time" name="end_time-new" value="{{ row.get('end_time', '') }}" form="edit-schedule"></td>
+    <td data-label="Location"><input type="text" name="location-new" value="{{ row.get('location', '') }}" placeholder="Location" maxlength="100" form="edit-schedule"></td>
+    <td data-label="TAs Needed"><input type="number" name="tas_needed-new" value="{{ row.get('tas_needed', 1) }}" min="1" form="edit-schedule"></td>
+    <td><button type="button" class="secondary" onclick="this.closest('tr').remove()">Remove</button></td>
+</tr>
+{% endmacro %}
 
-    <div class="nav">
-        <a href="{{ url_for('admin') }}">Home</a>
-        <a href="{{ url_for('schedules') }}">All Schedules</a>
-        <a href="{{ url_for('join_code') }}">Join Code</a>
-    </div>
+{% block content %}
 
+<a class="back-link" href="{{ url_for('schedules') }}">&larr; All Schedules</a>
+
+<div class="page-head">
     <h1>{{ schedule[1] }}</h1>
+    <span class="badge {{ schedule[2] }}">{{ schedule[2]|capitalize }}</span>
+</div>
 
-    {% if error %}
-    <p class="error">{{ error }}</p>
-    {% endif %}
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
 
-    {% if message %}
-    <p class="message">{{ message }}</p>
-    {% endif %}
+{% if message %}
+<p class="message">{{ message }}</p>
+{% endif %}
 
-    <h3>Schedule Name</h3>
+<div class="card-grid">
 
-    <form method="POST" action="{{ url_for('update_schedule', schedule_id=schedule[0]) }}">
+    <section class="card">
 
+        <h3>Schedule Details</h3>
+
+        {# These inputs belong to the form at the bottom of the Shifts card, so one button saves it all #}
         <label>Name:</label>
-        <input type="text" name="name" value="{{ schedule[1] }}" maxlength="100" required>
+        <input type="text" name="name" value="{{ details[0] }}" maxlength="100" form="edit-schedule" required>
 
-        <button type="submit">Save Name</button>
+        <label>Start Date:</label>
+        <input type="date" name="start_date" value="{{ details[1] or '' }}" form="edit-schedule">
 
-    </form>
+        <label>End Date:</label>
+        <input type="date" name="end_date" value="{{ details[2] or '' }}" form="edit-schedule">
 
-    <h3>Status: {{ schedule[2]|capitalize }}</h3>
+        <p>Save Changes is below the shifts.</p>
 
-    <a href="{{ url_for('assign_schedule', schedule_id=schedule[0]) }}">Assign TAs</a>
+    </section>
 
-    {% if schedule[2] == 'draft' %}
-    <p>Only you can see this schedule. Publish it so TAs can view it.</p>
+    <section class="card">
 
-    <form method="POST" action="{{ url_for('change_schedule_status', schedule_id=schedule[0]) }}">
-        <input type="hidden" name="status" value="open">
-        <button type="submit">Publish to TAs</button>
-    </form>
-    {% elif schedule[2] == 'open' %}
-    <p>TAs can see this schedule.</p>
+        <h3>Status</h3>
 
-    <form method="POST" action="{{ url_for('change_schedule_status', schedule_id=schedule[0]) }}">
-        <input type="hidden" name="status" value="draft">
-        <button type="submit">Unpublish</button>
-    </form>
-    {% elif schedule[2] == 'filled' %}
-    <p>Every shift is staffed. Approve or reject it on the Assign TAs page.</p>
-    {% elif schedule[2] == 'approved' %}
-    <p>This schedule is approved. Reopen it on the Assign TAs page to make changes.</p>
-    {% endif %}
+        {% if schedule[2] == 'draft' %}
+        <p>Only you can see this schedule. Publish it so TAs can view it.</p>
+        {% elif schedule[2] == 'open' %}
+        <p>TAs can see this schedule.</p>
+        {% elif schedule[2] == 'filled' %}
+        <p>Every shift is staffed. Approve or reject it on the Assign TAs page.</p>
+        {% elif schedule[2] == 'approved' %}
+        <p>This schedule is approved. Reopen it on the Assign TAs page to make changes.</p>
+        {% endif %}
+
+        <div class="actions">
+
+            <a class="btn{% if schedule[2] == 'draft' %} secondary{% endif %}" href="{{ url_for('assign_schedule', schedule_id=schedule[0]) }}">Assign TAs</a>
+
+            <a class="btn secondary" href="{{ url_for('best_times', schedule_id=schedule[0]) }}">Best Times</a>
+
+            {% if schedule[2] == 'draft' %}
+            <form method="POST" action="{{ url_for('change_schedule_status', schedule_id=schedule[0]) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="status" value="open">
+                <button type="submit">Publish to TAs</button>
+            </form>
+            {% elif schedule[2] == 'open' %}
+            <form method="POST" action="{{ url_for('change_schedule_status', schedule_id=schedule[0]) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="status" value="draft">
+                <button type="submit" class="secondary">Unpublish</button>
+            </form>
+            {% endif %}
+
+        </div>
+
+    </section>
+
+</div>
+
+<section class="card">
 
     <h3>Shifts</h3>
 
@@ -69,85 +115,152 @@
     {# A disabled fieldset disables every input and button inside it #}
     <fieldset class="plain" {% if locked %}disabled{% endif %}>
 
+    <div class="table-wrap">
+
     <table class="shift-table">
-        <tr>
-            <th>Day</th>
-            <th>Start</th>
-            <th>End</th>
-            <th>Location</th>
-            <th>TAs Needed</th>
-            <th></th>
-            <th></th>
-        </tr>
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Day</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Location</th>
+                <th>TAs Needed</th>
+                <th></th>
+            </tr>
+        </thead>
 
-        {# Inputs use form="..." so each row submits as its own form #}
-        {% for shift in shifts %}
-        <tr>
-            <td>
-                <select name="day" form="shift-{{ shift[0] }}">
-                    {% for day in days %}
-                    <option value="{{ day }}" {% if day == shift[1] %}selected{% endif %}>{{ day }}</option>
-                    {% endfor %}
-                </select>
-            </td>
-            <td><input type="time" name="start_time" value="{{ shift[2] }}" form="shift-{{ shift[0] }}" required></td>
-            <td><input type="time" name="end_time" value="{{ shift[3] }}" form="shift-{{ shift[0] }}" required></td>
-            <td><input type="text" name="location" value="{{ shift[4] or '' }}" maxlength="100" form="shift-{{ shift[0] }}"></td>
-            <td><input type="number" name="tas_needed" value="{{ shift[5] }}" min="1" form="shift-{{ shift[0] }}" required></td>
-            <td>
-                <form id="shift-{{ shift[0] }}" method="POST"
-                      action="{{ url_for('edit_shift', schedule_id=schedule[0], shift_id=shift[0]) }}">
-                    <button type="submit">Save</button>
-                </form>
-            </td>
-            <td>
-                <form method="POST"
-                      action="{{ url_for('delete_shift', schedule_id=schedule[0], shift_id=shift[0]) }}"
-                      onsubmit="return confirm('Delete this shift?');">
-                    <button type="submit" class="danger">Delete</button>
-                </form>
-            </td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="7">No shifts yet. Add one below.</td>
-        </tr>
-        {% endfor %}
+        <tbody id="shift-rows">
+            {# Each input's name ends with its shift id so the save route can tell the rows apart #}
+            {% for shift in shifts %}
+            <tr>
+                <td data-label="Type">
+                    <select name="shift_type-{{ shift[0] }}" form="edit-schedule">
+                        {% for shift_type in shift_types %}
+                        <option value="{{ shift_type }}" {% if shift_type == shift[6] %}selected{% endif %}>{{ shift_type }}</option>
+                        {% endfor %}
+                    </select>
+                </td>
+                <td data-label="Day">
+                    <select name="day-{{ shift[0] }}" form="edit-schedule">
+                        {% for day in days %}
+                        <option value="{{ day }}" {% if day == shift[1] %}selected{% endif %}>{{ day }}</option>
+                        {% endfor %}
+                    </select>
+                </td>
+                <td data-label="Start"><input type="time" name="start_time-{{ shift[0] }}" value="{{ shift[2] }}" form="edit-schedule" required></td>
+                <td data-label="End"><input type="time" name="end_time-{{ shift[0] }}" value="{{ shift[3] }}" form="edit-schedule" required></td>
+                <td data-label="Location"><input type="text" name="location-{{ shift[0] }}" value="{{ shift[4] or '' }}" maxlength="100" form="edit-schedule"></td>
+                <td data-label="TAs Needed"><input type="number" name="tas_needed-{{ shift[0] }}" value="{{ shift[5] }}" min="1" form="edit-schedule" required></td>
+                <td><button type="button" class="danger" onclick="deleteShift({{ shift[0] }})">Delete</button></td>
+            </tr>
+            {% else %}
+            {% if not new_rows %}
+            <tr id="no-shifts">
+                <td colspan="7">No shifts yet. Click Add Shift to start.</td>
+            </tr>
+            {% endif %}
+            {% endfor %}
 
-        {% if not locked %}
-        <tr>
-            <td>
-                <select name="day" form="add-shift">
-                    {% for day in days %}
-                    <option value="{{ day }}">{{ day }}</option>
-                    {% endfor %}
-                </select>
-            </td>
-            <td><input type="time" name="start_time" form="add-shift" required></td>
-            <td><input type="time" name="end_time" form="add-shift" required></td>
-            <td><input type="text" name="location" placeholder="Location" maxlength="100" form="add-shift"></td>
-            <td><input type="number" name="tas_needed" value="1" min="1" form="add-shift" required></td>
-            <td colspan="2">
-                <form id="add-shift" method="POST"
-                      action="{{ url_for('add_shift', schedule_id=schedule[0]) }}">
-                    <button type="submit">Add Shift</button>
-                </form>
-            </td>
-        </tr>
-        {% endif %}
+            {% for row in new_rows %}
+            {{ new_shift_row(row) }}
+            {% endfor %}
+        </tbody>
 
     </table>
 
+    </div>
+
     </fieldset>
+
+    <form id="edit-schedule" method="POST" action="{{ url_for('save_schedule', schedule_id=schedule[0]) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="delete_shift" id="delete-shift">
+
+        <div class="actions">
+            {% if not locked %}
+            <button type="button" class="secondary" onclick="addShiftRow()">Add Shift</button>
+            {% endif %}
+            <button type="submit">Save Changes</button>
+        </div>
+    </form>
+
+    {# A template isn't shown on the page; addShiftRow copies it into the table #}
+    {% if not locked %}
+    <template id="new-shift-row">
+        <table><tbody>{{ new_shift_row() }}</tbody></table>
+    </template>
+    {% endif %}
+
+    <script>
+        function addShiftRow() {
+            const noShifts = document.getElementById("no-shifts");
+            if (noShifts) {
+                noShifts.remove();
+            }
+
+            const row = document.getElementById("new-shift-row").content.querySelector("tr").cloneNode(true);
+            document.getElementById("shift-rows").appendChild(row);
+            row.querySelector("select").focus();
+        }
+
+        // Sends the whole page with this shift's id, so the save route removes it
+        // and edits to the other rows aren't lost
+        function deleteShift(shiftId) {
+            if (confirm("Delete this shift? Your other changes will be saved too.")) {
+                document.getElementById("delete-shift").value = shiftId;
+                document.getElementById("edit-schedule").submit();
+            }
+        }
+    </script>
+
+</section>
+
+<section class="card">
+
+    <h3>Copy to New Dates</h3>
+
+    <p>Creates a new draft with the same shifts. TA availability and assignments are not copied.</p>
+
+    <form method="POST" action="{{ url_for('copy_schedule', schedule_id=schedule[0]) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label>New Schedule Name:</label>
+        <input type="text" name="name" value="{{ schedule[1] }} (copy)" maxlength="100" required>
+
+        <label>New Dates:</label>
+        <select name="shift_by">
+            {# Moving the dates only works if this schedule has dates to move #}
+            {% if schedule[3] %}
+            {% for months in shift_months %}
+            <option value="{{ months }}">Move forward {{ months }} month{% if months > 1 %}s{% endif %}</option>
+            {% endfor %}
+            {% endif %}
+            <option value="custom">Enter dates below</option>
+        </select>
+
+        <label>Start Date (only for entered dates):</label>
+        <input type="date" name="start_date">
+
+        <label>End Date (only for entered dates):</label>
+        <input type="date" name="end_date">
+
+        <button type="submit">Create Copy</button>
+
+    </form>
+
+</section>
+
+<section class="card">
 
     <h3>Delete Schedule</h3>
 
     <form method="POST" action="{{ url_for('delete_schedule', schedule_id=schedule[0]) }}"
           onsubmit="return confirm('Delete this schedule and all of its shifts? This cannot be undone.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="danger">Delete Schedule</button>
     </form>
 
-</div>
+</section>
 
-</body>
-</html>
+{% endblock %}

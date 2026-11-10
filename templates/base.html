@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}TA Scheduler{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+{# Login and register replace this block with nothing, so they have no top bar #}
+{% block topbar %}
+{% macro nav_link(endpoint, label, active) %}
+<a href="{{ url_for(endpoint) }}" {% if active %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
+{% endmacro %}
+
+<header class="topbar">
+    <div class="topbar-inner">
+
+        <a class="brand" href="{{ url_for('admin' if session.get('role') == 'Admin' else 'ta') }}">TA Scheduler</a>
+
+        <nav class="topnav">
+            {# Matching on the path keeps the tab lit on sub-pages and after a form error #}
+            {% if session.get('role') == 'Admin' %}
+            {{ nav_link('admin', 'Dashboard', request.path == '/admin') }}
+            {{ nav_link('schedules', 'Schedules', request.path.startswith('/schedules')) }}
+            {{ nav_link('users', 'Users', request.path == '/users') }}
+            {{ nav_link('join_code', 'Join Code', request.path == '/join-code') }}
+            {% else %}
+            {{ nav_link('ta', 'Dashboard', request.path == '/ta') }}
+            {{ nav_link('ta_schedules', 'Schedules', request.path.startswith('/ta/schedules')) }}
+            {{ nav_link('my_shifts', 'My Shifts', request.path == '/ta/my-shifts') }}
+            {% endif %}
+        </nav>
+
+        <div class="topbar-user">
+            {# Only TAs have a name in the session; the admin account is hard coded #}
+            <span class="user-name">{{ session.get('name', 'Admin') }}</span>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+
+    </div>
+</header>
+{% endblock %}
+
+<main class="container">
+    {% block content %}{% endblock %}
+</main>
+
+</body>
+</html>
